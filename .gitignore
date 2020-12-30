@@ -1,0 +1,10 @@
+ssl.*
+*~
+*.exe
+*.cm*
+.merlin
+*.install
+_build
+_opam
+\#*\#
+.\#*

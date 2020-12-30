@@ -1,0 +1,7 @@
+[submodule "vendors/kxclib"]
+	path = vendors/kxclib
+	url = https://github.com/kxcteam/kxclib-ocaml.git
+[submodule "vendors/httpaf"]
+	path = vendors/httpaf
+	url = https://github.com/kxcteam/httpaf.git
+	branch = kserve
