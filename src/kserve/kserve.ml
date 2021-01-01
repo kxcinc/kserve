@@ -254,17 +254,11 @@ module Globals = struct
                sprintf "%s\\(.*\\)%s" (quote target_before) (quote target_after)
                |> regexp in
              fun ~target ->
-             Str.(
-               if string_match target_regexp target 0 then (
-                 let subtarget = matched_group 1 target in
-                 Some (upstream_patt, path_before^subtarget^path_after)
-               ) else None
-             )
-             (* Str.matched_group *)
-             (* debug "bingo : %s .. %s ; %s .. %s"
-              *   target_before target_after
-              *   path_before path_after; *)
-             (* exit 0 *)
+             let open Str in
+             if string_match target_regexp target 0 then (
+               let subtarget = matched_group 1 target in
+               Some (upstream_patt, path_before^subtarget^path_after)
+             ) else None
           | _ -> malformed_argument())
       | _ -> malformed_argument())
 end
