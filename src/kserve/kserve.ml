@@ -502,6 +502,7 @@ let main() =
         bind_desc port;
       info "      server software : %a"
         (colored ~style:`Bold `White) Versions.software_version_desc;
+      info "      software binary : %s" Sys.executable_name;
       info "         listening at : %s"
         (sprintf "%s://%s:%d" scheme_str hostname port);
       info "    startup timestamp : %.3f (i.e. %a)"
