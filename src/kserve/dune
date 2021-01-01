@@ -1,9 +1,10 @@
 (executable
  (name kserve)
+ (public_name kserve)
  (promote (until-clean))
  (libraries
    httpaf httpaf-lwt-unix
-   ptime sexplib uri-sexp digestif yojson
+   ptime digestif str
    kxclib)
- (preprocess (pps ppx_sexp_conv ppx_deriving_yojson kxclib.ppx))
+ (preprocess (pps kxclib.ppx))
  (flags (:standard -open Kxclib)))
