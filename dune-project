@@ -13,4 +13,7 @@
  (depends
   (dune (> 2.2))
   (ptime (>= 0.8))
-  (digestif (>= 0.8))))
+  (digestif (>= 0.8))
+  (tls (>= 0.11))
+  (lwt (>= 5.0))
+  (cohttp-lwt-unix (>= 2.5))))

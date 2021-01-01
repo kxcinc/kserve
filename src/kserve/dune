@@ -4,6 +4,7 @@
  (promote (until-clean))
  (libraries
    httpaf httpaf-lwt-unix
+   tls.lwt lwt.unix cohttp-lwt-unix
    ptime digestif str
    kxclib)
  (preprocess (pps kxclib.ppx))
