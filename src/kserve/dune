@@ -8,3 +8,9 @@
    kxclib)
  (preprocess (pps kxclib.ppx))
  (flags (:standard -open Kxclib)))
+
+(env
+ (dev
+  (flags (:standard -g)))
+ (release
+  (ocamlopt_flags (:standard -O3))))
