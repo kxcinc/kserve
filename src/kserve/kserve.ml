@@ -5,6 +5,7 @@ let pp_sexp = Sexplib.Sexp.pp_hum
 module Globals0 = struct
   let program_starts = Unix.gettimeofday()
   let color_enabled = ArgOptions.has_flag "-no-color" |> not
+  let upstream_conn_timeout = 1. (* sec *)
 end
 
 let colored ?style ?color_mode:(m=`Fg) color ppf str =
@@ -69,6 +70,17 @@ module Logging = struct
   let debug fmt = log fmt ~label:"DEBUG" ~header_style:(Some `Bold) ~header_color:`Magenta
   let error fmt = log fmt ~label:"ERROR" ~header_style:(Some `Bold) ~header_color:`Red
 end open Logging
+
+module PrivateUtils = struct
+  let categorize_path path =
+    match Sys.(file_exists path, file_exists path && is_directory path) with
+    | false, _ -> `Non_exsists
+    | true, false -> `File
+    | true, true -> `Directory
+  let may_replace_assoc (k, v) l =
+    if List.mem_assoc k l then l
+    else (k, v) :: (List.remove_assoc k l)
+end open PrivateUtils
 
 open Lwt.Infix
 open Httpaf
@@ -221,14 +233,45 @@ module Globals = struct
     if ArgOptions.has_flag "-hide-htmlext"
     then [".html"; ".htm"]
     else []
+
+  let upstream_mappings :
+        target:string ->
+        (string (* upstream *) * string (* url *)) option =
+    match ArgOptions.(get_option (StringOption "-upstream")) with
+    | None -> fun ~target:_ -> None
+    | Some map -> (
+      let malformed_argument() =
+        error "malformed -upstream: must be of form '<target pattern> => <upstream pattern>'@\n\
+               e.g. '/api/... => http://localhost:4321/...'";
+        exit 2 in
+      match Str.split_delim (Str.regexp_string " => ") map with
+      | [target_patt; upstream_patt] ->
+         let split = Str.(split_delim (regexp_string "...")) in
+         (match split target_patt, split upstream_patt with
+          | [target_before; target_after], [path_before; path_after] ->
+             let target_regexp =
+               let open Str in
+               sprintf "%s\\(.*\\)%s" (quote target_before) (quote target_after)
+               |> regexp in
+             fun ~target ->
+             Str.(
+               if string_match target_regexp target 0 then (
+                 let subtarget = matched_group 1 target in
+                 Some (upstream_patt, path_before^subtarget^path_after)
+               ) else None
+             )
+             (* Str.matched_group *)
+             (* debug "bingo : %s .. %s ; %s .. %s"
+              *   target_before target_after
+              *   path_before path_after; *)
+             (* exit 0 *)
+          | _ -> malformed_argument())
+      | _ -> malformed_argument())
 end
 
 let additional_headers ?target:_ headers =
-  let may_replace (header, value) headers =
-    if List.mem_assoc header headers then headers
-    else (header, value) :: (List.remove_assoc header headers) in
   headers
-  |> may_replace ("Server", Versions.software_version_desc)
+  |> may_replace_assoc ("Server", Versions.software_version_desc)
 
 let stream_asset_with_prefix
       ?prefix
@@ -327,6 +370,71 @@ let respond_reqd_with_string
     Body.write_string body str);
   Body.flush body (fun () -> Body.close_writer body)
 
+(* XXX - amend headers *)
+let handle_upstream ?remote_ip ~upstream ~url reqd =
+  let module Client = Cohttp_lwt_unix.Client in
+  let url = url |> Uri.of_string in
+  let req = Reqd.request reqd in
+  let with_timeout ~timeout v progn =
+    let timeout =
+      Lwt_unix.sleep timeout >>= fun () ->
+      Lwt.return v in
+    Lwt.pick [progn; timeout] in
+  let host = Headers.get_exn req.headers "host" in
+  let headers =
+    let remote_ip = match remote_ip with
+      | None -> identity
+      | Some ip -> may_replace_assoc ("x-forwarded-for", ip) in
+    req.headers
+    |> Headers.to_list
+    |&> (fun (k,v) -> String.lowercase_ascii k, v)
+    |> List.remove_assoc "host"
+    |> may_replace_assoc ("x-forwarded-host", host)
+    |> remote_ip
+    |> Cohttp.Header.of_list in
+  let body =
+    let s, wr = Lwt_stream.create() in
+    let on_read bs ~off ~len =
+      Bigstringaf.substring bs ~off ~len
+      |> Option.some |> wr in
+    let on_eof() = wr None in
+    Reqd.request_body reqd
+    |> Body.schedule_read ~on_read ~on_eof;
+    `Stream s in
+  match req.meth with
+  | #Method.standard as meth ->
+     let progn() =
+       let timeout = Globals.upstream_conn_timeout in
+       with_timeout ~timeout None
+         (Client.call ~body ~headers meth url >|= Option.some) >>= function
+         (* XXX - body *)
+       | None ->
+          error "upstream connection timeout; upstream=%s; url=%s"
+            upstream (Uri.to_string url);
+          respond_reqd_with_string ~status:`Internal_server_error reqd
+                   "timeout making connection to upstream";
+          Lwt.return_unit
+       | Some (resp, ubody) ->
+         let stream = Cohttp_lwt.Body.to_stream ubody in
+         let { Cohttp.Response.headers; status; _ } = resp in
+         let headers = headers |> Cohttp.Header.to_list |> Headers.of_list in
+         let status = Cohttp.Code.code_of_status status |> Status.of_code in
+         let cbody =
+           Response.create ~headers status
+           |> Reqd.respond_with_streaming reqd in
+         stream |> Lwt_stream.iter (fun chunk ->
+                       Body.write_string cbody chunk) >>= fun () ->
+         Lwt_stream.closed stream >>= fun () ->
+         Body.flush cbody (fun () -> Body.close_writer cbody);
+         Lwt.return_unit in
+     Lwt.async progn
+  | _ ->
+     error "unsupported HTTP method in handle_upstream: %a"
+       Method.pp_hum req.meth;
+     respond_reqd_with_string ~status:`Not_implemented reqd
+       (sprintf "http request method (%a) not supported"
+          Method.pp_hum req.meth)
+
 let respond_with_404 ?path reqd =
   let path = match path with
     | None -> (Reqd.request reqd).target
@@ -354,7 +462,7 @@ let handle_exception exn start_response =
   Body.write_string body msg;
   Body.flush body (fun () -> Body.close_writer body)
 
-let dir_dim_regex = Str.regexp Filename.dir_sep
+let dir_dim_regexp = Str.regexp_string Filename.dir_sep
 
 let request_handler addr reqd =
   let req = Reqd.request reqd in
@@ -362,57 +470,61 @@ let request_handler addr reqd =
     pp_sockaddr addr
     Request.pp_hum req;
   try let target = req.target in
-      let asset_path =
-        (* as a security measure, we'd like to check that
+      match Globals.upstream_mappings ~target with
+      | Some (upstream, url) ->
+         let remote_ip = match addr with
+           | Unix.ADDR_UNIX _ -> None
+           | ADDR_INET (inet, _) -> Some (Unix.string_of_inet_addr inet)
+         in
+         access "relayed to upstream %s => %s" target url;
+         handle_upstream ?remote_ip ~upstream ~url reqd
+      | None -> (
+        let asset_path =
+          (* as a security measure, we'd like to check that
            target does not has components referring to parent folders *)
-        if Str.split_delim dir_dim_regex target
-           |> List.mem Filename.parent_dir_name then (
-          raise (Invalid_path target));
-        (* also partly as as a security measure,
+          if Str.split_delim dir_dim_regexp target
+             |> List.mem Filename.parent_dir_name then (
+            raise (Invalid_path target));
+          (* also partly as as a security measure,
            we make sure that the path starts with the [asset_root] *)
-        Globals.asset_root^target in
-      let extended_asset_path ext = asset_path^ext in
-      let unsupported_method = function
-        | `TRACE | `CONNECT  | `DELETE | `OPTIONS | `Other _
-          -> true
-        | `GET | `HEAD | `POST | `PUT
-          -> false in
-      let categorize_path path =
-        match Sys.(file_exists path, file_exists path && is_directory path) with
-        | false, _ -> `Non_exsists
-        | true, false -> `File
-        | true, true -> `Directory in
-      let serve_path path =
-        let asset = AssetCache.get path in
-        (* let media_type = guess_media_type path in
-         * let asset = Assets.asset_of_path ~media_type path in *)
-        let contents = Assets.load asset in
-        stream_asset_with_prefix reqd ~contents in
-      let try_serve_unhidden_extensions exts =
-        (* return true if served *)
-        let has_category cat path = categorize_path path = cat in
-        let open MonadOps(Option) in
-        (exts |&> extended_asset_path
-         |> List.find_opt (has_category `File) >>= fun path ->
-         info "serving %s for %s" path target;
-         serve_path path; pure ()) |> Option.is_some in
-      match
-        target, req.meth,
-        categorize_path asset_path with
-      | _ when unsupported_method req.meth ->
-         respond_reqd_with_string ~status:`Not_implemented reqd
-           (sprintf "http request method (%a) not supported"
-              Method.pp_hum req.meth)
-      | "/", _, _ when Option.is_some Globals.welcome_file ->
-         let contents = Globals.welcome_file |> Option.get |> Assets.load in
-         stream_asset_with_prefix reqd ~contents
-      | _, _, `File -> serve_path asset_path
-      | _, _, `Directory ->
-         respond_reqd_with_string ~status:`Service_unavailable reqd
-           (sprintf "%s is a directory" target)
-      | _ ->
-         if not (try_serve_unhidden_extensions Globals.extensions_to_hide)
-         then respond_with_404 reqd
+          Globals.asset_root^target in
+        let extended_asset_path ext = asset_path^ext in
+        let unsupported_method = function
+          | `TRACE | `CONNECT  | `DELETE | `OPTIONS | `Other _
+            -> true
+          | `GET | `HEAD | `POST | `PUT
+            -> false in
+        let serve_path path =
+          let asset = AssetCache.get path in
+          (* let media_type = guess_media_type path in
+           * let asset = Assets.asset_of_path ~media_type path in *)
+          let contents = Assets.load asset in
+          stream_asset_with_prefix reqd ~contents in
+        let try_serve_unhidden_extensions exts =
+          (* return true if served *)
+          let has_category cat path = categorize_path path = cat in
+          let open MonadOps(Option) in
+          (exts |&> extended_asset_path
+           |> List.find_opt (has_category `File) >>= fun path ->
+           info "serving %s for %s" path target;
+           serve_path path; pure ()) |> Option.is_some in
+        match
+          target, req.meth,
+          categorize_path asset_path with
+        | _ when unsupported_method req.meth ->
+           respond_reqd_with_string ~status:`Not_implemented reqd
+             (sprintf "http request method (%a) not supported"
+                Method.pp_hum req.meth)
+        | "/", _, _ when Option.is_some Globals.welcome_file ->
+           let contents = Globals.welcome_file |> Option.get |> Assets.load in
+           stream_asset_with_prefix reqd ~contents
+        | _, _, `File -> serve_path asset_path
+        | _, _, `Directory ->
+           respond_reqd_with_string ~status:`Service_unavailable reqd
+             (sprintf "%s is a directory" target)
+        | _ ->
+           if not (try_serve_unhidden_extensions Globals.extensions_to_hide)
+           then respond_with_404 reqd)
   with
   | Invalid_path path ->
      warn "received request with invalid path: %s" path;
