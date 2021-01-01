@@ -354,7 +354,7 @@ let handle_exception exn start_response =
   Body.write_string body msg;
   Body.flush body (fun () -> Body.close_writer body)
 
-let dir_dim_regex = Str.regexp Filename.dir_sep
+let dir_dim_regexp = Str.regexp_string Filename.dir_sep
 
 let request_handler addr reqd =
   let req = Reqd.request reqd in
@@ -365,10 +365,10 @@ let request_handler addr reqd =
       let asset_path =
         (* as a security measure, we'd like to check that
            target does not has components referring to parent folders *)
-        if Str.split_delim dir_dim_regex target
            |> List.mem Filename.parent_dir_name then (
           raise (Invalid_path target));
         (* also partly as as a security measure,
+        if Str.split_delim dir_dim_regexp target
            we make sure that the path starts with the [asset_root] *)
         Globals.asset_root^target in
       let extended_asset_path ext = asset_path^ext in
