@@ -239,28 +239,41 @@ module Globals = struct
         (string (* upstream *) * string (* url *)) option =
     match ArgOptions.(get_option (StringOption "-upstream")) with
     | None -> fun ~target:_ -> None
-    | Some map -> (
+    | Some maps -> (
       let malformed_argument() =
         error "malformed -upstream: must be of form '<target pattern> => <upstream pattern>'@\n\
                e.g. '/api/... => http://localhost:4321/...'";
         exit 2 in
-      match Str.split_delim (Str.regexp_string " => ") map with
-      | [target_patt; upstream_patt] ->
-         let split = Str.(split_delim (regexp_string "...")) in
-         (match split target_patt, split upstream_patt with
-          | [target_before; target_after], [path_before; path_after] ->
-             let target_regexp =
+      let parse_single map =
+        match Str.split_delim (Str.regexp_string " => ") map with
+        | [target_patt; upstream_patt] ->
+           let split = Str.(split_delim (regexp_string "...")) in
+           (match split target_patt, split upstream_patt with
+            | [target_before; target_after], [path_before; path_after] ->
+               let target_regexp =
+                 let open Str in
+                 sprintf "%s\\(.*\\)%s" (quote target_before) (quote target_after)
+                 |> regexp in
+               fun ~target ->
                let open Str in
-               sprintf "%s\\(.*\\)%s" (quote target_before) (quote target_after)
-               |> regexp in
-             fun ~target ->
-             let open Str in
-             if string_match target_regexp target 0 then (
-               let subtarget = matched_group 1 target in
-               Some (upstream_patt, path_before^subtarget^path_after)
-             ) else None
-          | _ -> malformed_argument())
-      | _ -> malformed_argument())
+               if string_match target_regexp target 0 then (
+                 let subtarget = matched_group 1 target in
+                 Some (upstream_patt, path_before^subtarget^path_after)
+               ) else None
+            | _ -> malformed_argument())
+        | _ -> malformed_argument() in
+      let mappings =
+        String.split_on_char ';' maps
+        |&> String.trim
+        |&> parse_single in
+      fun ~target ->
+      let rec loop = function
+        | [] -> None
+        | head :: rest ->
+           (match head ~target with
+            | Some r -> Some r
+            | None -> loop rest) in
+      loop mappings)
 end
 
 let additional_headers ?target:_ headers =
