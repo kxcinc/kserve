@@ -1,5 +1,5 @@
-let version_str = "ver~p007"
-let version_num = 1000_0_007
+let version_str = "ver~p010"
+let version_num = 1000_0_010
 
 let software_name = "kserve"
 let software_name_desc = "kserve by kxc"

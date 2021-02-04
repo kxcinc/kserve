@@ -399,22 +399,24 @@ let handle_upstream ?remote_ip ~upstream ~url reqd =
     |> may_replace_assoc ("x-forwarded-host", host)
     |> remote_ip
     |> Cohttp.Header.of_list in
-  let body =
+  let body, start_body_transfer =
+    let reqbody = Reqd.request_body reqd in
     let s, wr = Lwt_stream.create() in
-    let on_read bs ~off ~len =
+    let rec on_read bs ~off ~len =
       Bigstringaf.substring bs ~off ~len
-      |> Option.some |> wr in
-    let on_eof() = wr None in
-    Reqd.request_body reqd
-    |> Body.schedule_read ~on_read ~on_eof;
-    `Stream s in
+      |> Option.some |> wr;
+      Body.schedule_read reqbody ~on_read ~on_eof
+    and on_eof() = wr None in
+    `Stream s, (fun () ->
+      Body.schedule_read reqbody ~on_read ~on_eof) in
   match req.meth with
   | #Method.standard as meth ->
      let progn() =
        let timeout = Globals.upstream_conn_timeout in
        with_timeout ~timeout None
-         (Client.call ~body ~headers meth url >|= Option.some) >>= function
-         (* XXX - body *)
+         (Client.call ~body ~headers meth url
+          |> Fn.tap (fun _ -> start_body_transfer())
+          >|= Option.some) >>= function
        | None ->
           error "upstream connection timeout; upstream=%s; url=%s"
             upstream (Uri.to_string url);
