@@ -229,6 +229,13 @@ module Globals = struct
       | None -> None, None
       | Some (asset, path) -> Some asset, Some path
 
+  let spa =
+    let spa = ArgOptions.has_flag "-spa" in
+    if spa && (Option.is_none welcome_file) then (
+      error "-spa : you must specify a welcome file";
+      exit 2
+    ) else spa
+
   let extensions_to_hide =
     if ArgOptions.has_flag "-hide-htmlext"
     then [".html"; ".htm"]
@@ -517,6 +524,10 @@ let request_handler addr reqd =
            |> List.find_opt (has_category `File) >>= fun path ->
            info "serving %s for %s" path target;
            serve_path path; pure ()) |> Option.is_some in
+        let have_welcome_file = Option.is_some Globals.welcome_file in
+        let serve_welcome_file() =
+           let contents = Globals.welcome_file |> Option.get |> Assets.load in
+           stream_asset_with_prefix reqd ~contents in
         match
           target, req.meth,
           categorize_path asset_path with
@@ -524,16 +535,17 @@ let request_handler addr reqd =
            respond_reqd_with_string ~status:`Not_implemented reqd
              (sprintf "http request method (%a) not supported"
                 Method.pp_hum req.meth)
-        | "/", _, _ when Option.is_some Globals.welcome_file ->
-           let contents = Globals.welcome_file |> Option.get |> Assets.load in
-           stream_asset_with_prefix reqd ~contents
+        | "/", _, _ when have_welcome_file ->
+           serve_welcome_file()
         | _, _, `File -> serve_path asset_path
         | _, _, `Directory ->
            respond_reqd_with_string ~status:`Service_unavailable reqd
              (sprintf "%s is a directory" target)
         | _ ->
-           if not (try_serve_unhidden_extensions Globals.extensions_to_hide)
-           then respond_with_404 reqd)
+           if try_serve_unhidden_extensions Globals.extensions_to_hide then ()
+           else if have_welcome_file && Globals.spa then (
+             serve_welcome_file()
+           ) else respond_with_404 reqd)
   with
   | Invalid_path path ->
      warn "received request with invalid path: %s" path;
@@ -655,7 +667,11 @@ let main() =
           fprintf "@ (relative to cwd)"
         ) in
       config "asset root : %a" pp_rpath Globals.asset_root;
-      Globals.welcome_file_path |> Option.iter (config "welcome file : %a" pp_rpath);
+      Globals.welcome_file_path |> Option.iter (fun path ->
+        config "welcome file : %a" pp_rpath path;
+        if Globals.spa then (
+          config "as a single-page-application serving : %a" pp_rpath path
+        ));
       https_config |> Option.iter (fun (certpath, keypath) ->
         config "ssl certificate : %a" pp_rpath certpath;
         config "ssl private key : %a" pp_rpath keypath);
