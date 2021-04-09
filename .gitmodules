@@ -5,3 +5,6 @@
 	path = vendors/httpaf
 	url = https://github.com/kxcteam/httpaf.git
 	branch = kserve
+[submodule "vendors/gensl"]
+	path = vendors/gensl
+	url = https://github.com/kxcteam/gensl.git
