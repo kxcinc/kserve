@@ -537,10 +537,47 @@ let request_handler addr reqd =
                 Method.pp_hum req.meth)
         | "/", _, _ when have_welcome_file ->
            serve_welcome_file()
-        | _, _, `File -> serve_path asset_path
-        | _, _, `Directory ->
+        | _, `GET, `File -> serve_path asset_path
+        | _, `GET, `Directory ->
            respond_reqd_with_string ~status:`Service_unavailable reqd
              (sprintf "%s is a directory" target)
+        | _, `POST, _ ->
+           let parse_gensl line =
+             line
+             |> Lexing.from_string
+             |> Parser.Default.pstate
+             |> Parser.Default.read_top
+             |> (function
+                 | Ok (toplevel, _) ->
+                    sprintf "%a" Gensl.ParsetreePrinter.pp_toplevel toplevel
+                 | _e -> "parse error\n")
+           in
+(*
+           let rec on_read buffer ~off ~len =
+             Body
+           let gensl_code =
+             Body.schedule_read (Reqd.request_body reqd)
+           in
+           let responce =
+             let content_type =
+               match Headers.get req.headers "content-type" with
+               | None -> "application/octet-stream"
+               | Some x -> x
+             in
+             Response.create
+               ~headers:(Headers.of_list ["content-type", content_type; "connection", "close"]) `OK
+           in
+           let request_body = Reqd.request_body reqd in
+           let response_body = Reqd.respond_with_streaming reqd responce in
+           let rec on_read buffer ~off ~len =
+             Body.write_bigstring response_body buffer ~off ~len;
+             Body.schedule_read request_body ~on_eof ~on_read
+           and on_eof () =
+             Body.close_writer response_body
+           in
+*)
+           respond_reqd_with_string reqd (parse_gensl "0 ,3 1 2 3 .. 4")
+(*            Body.schedule_read (Reqd.request_body reqd) ~on_eof ~on_read *)
         | _ ->
            if try_serve_unhidden_extensions Globals.extensions_to_hide then ()
            else if have_welcome_file && Globals.spa then (
