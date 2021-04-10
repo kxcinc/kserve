@@ -542,24 +542,21 @@ let request_handler addr reqd =
            respond_reqd_with_string ~status:`Service_unavailable reqd
              (sprintf "%s is a directory" target)
         | _, `POST, _ ->
-           let parse_gensl line =
-             line
-             |> Lexing.from_string
-             |> Parser.Default.pstate
-             |> Parser.Default.read_top
-             |> (function
-                 | Ok (toplevel, _) ->
-                    sprintf "%a" Gensl.ParsetreePrinter.pp_toplevel toplevel
-                 | _e -> "parse error\n")
-           in
-           let read = ref [] in
+          let open Genslib in
+          let open Intf in
+          let read = ref [] in
            let reqbody = Reqd.request_body reqd in
            let rec on_read buffer ~off ~len =
              refappend (Bigstringaf.substring buffer ~off ~len) read;
              Body.schedule_read reqbody ~on_eof ~on_read
            and on_eof () =
-             let gensl_line = (String.concat "" (List.rev !read)) in
-             let parsed_gensl = parse_gensl gensl_line in
+             let raw_gensl_string = (String.concat "" (List.rev !read)) in
+             let canonical_gensl =
+               Eval.parse_gensl_to_canonical raw_gensl_string
+             in
+             let canonical_gensl_string =
+               CanonicaltreeFlavor.to_string canonical_gensl
+             in
              let responce =
                let content_type =
                  match Headers.get req.headers "Content-Type" with
@@ -569,12 +566,13 @@ let request_handler addr reqd =
                Response.create
                  ~headers:(Headers.of_list
                              ["Content-Type", content_type;
-                              "Content-Length", String.length parsed_gensl
+                              "Content-Length", canonical_gensl_string
+                                                |> String.length
                                                 |> string_of_int;
                               "Connection", "close"])
                  `OK
              in
-             Reqd.respond_with_string reqd responce parsed_gensl
+             Reqd.respond_with_string reqd responce canonical_gensl_string
            in
            Body.schedule_read reqbody ~on_eof ~on_read
         | _ ->
