@@ -558,6 +558,8 @@ let request_handler addr reqd =
              refappend (Bigstringaf.substring buffer ~off ~len) read;
              Body.schedule_read reqbody ~on_eof ~on_read
            and on_eof () =
+             let gensl_line = (String.concat "" (List.rev !read)) in
+             let parsed_gensl = parse_gensl gensl_line in
              let responce =
                let content_type =
                  match Headers.get req.headers "Content-Type" with
@@ -565,10 +567,12 @@ let request_handler addr reqd =
                  | Some x -> x
                in
                Response.create
-                 ~headers:(Headers.of_list ["Content-Type", content_type; "Connection", "close"]) `OK
+                 ~headers:(Headers.of_list ["Content-Type", content_type;
+                                            "Content-Length", string_of_int (String.length parsed_gensl);
+                                            "Connection", "close"])
+                 `OK
              in
-             let gensl_line = String.concat "" (List.rev !read) in
-             Reqd.respond_with_string reqd responce (parse_gensl gensl_line)
+             Reqd.respond_with_string reqd responce parsed_gensl
            in
            Body.schedule_read reqbody ~on_eof ~on_read
         | _ ->
