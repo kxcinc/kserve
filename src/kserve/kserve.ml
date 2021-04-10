@@ -567,9 +567,11 @@ let request_handler addr reqd =
                  | Some x -> x
                in
                Response.create
-                 ~headers:(Headers.of_list ["Content-Type", content_type;
-                                            "Content-Length", string_of_int (String.length parsed_gensl);
-                                            "Connection", "close"])
+                 ~headers:(Headers.of_list
+                             ["Content-Type", content_type;
+                              "Content-Length", String.length parsed_gensl
+                                                |> string_of_int;
+                              "Connection", "close"])
                  `OK
              in
              Reqd.respond_with_string reqd responce parsed_gensl
