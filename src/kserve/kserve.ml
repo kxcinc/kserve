@@ -552,32 +552,25 @@ let request_handler addr reqd =
                     sprintf "%a" Gensl.ParsetreePrinter.pp_toplevel toplevel
                  | _e -> "parse error\n")
            in
-(*
+           let read = ref [] in
+           let reqbody = Reqd.request_body reqd in
            let rec on_read buffer ~off ~len =
-             Body
-           let gensl_code =
-             Body.schedule_read (Reqd.request_body reqd)
-           in
-           let responce =
-             let content_type =
-               match Headers.get req.headers "content-type" with
-               | None -> "application/octet-stream"
-               | Some x -> x
-             in
-             Response.create
-               ~headers:(Headers.of_list ["content-type", content_type; "connection", "close"]) `OK
-           in
-           let request_body = Reqd.request_body reqd in
-           let response_body = Reqd.respond_with_streaming reqd responce in
-           let rec on_read buffer ~off ~len =
-             Body.write_bigstring response_body buffer ~off ~len;
-             Body.schedule_read request_body ~on_eof ~on_read
+             refappend (Bigstringaf.substring buffer ~off ~len) read;
+             Body.schedule_read reqbody ~on_eof ~on_read
            and on_eof () =
-             Body.close_writer response_body
+             let responce =
+               let content_type =
+                 match Headers.get req.headers "Content-Type" with
+                 | None -> "application/octet-stream"
+                 | Some x -> x
+               in
+               Response.create
+                 ~headers:(Headers.of_list ["Content-Type", content_type; "Connection", "close"]) `OK
+             in
+             let gensl_line = String.concat "" (List.rev !read) in
+             Reqd.respond_with_string reqd responce (parse_gensl gensl_line)
            in
-*)
-           respond_reqd_with_string reqd (parse_gensl "0 ,3 1 2 3 .. 4")
-(*            Body.schedule_read (Reqd.request_body reqd) ~on_eof ~on_read *)
+           Body.schedule_read reqbody ~on_eof ~on_read
         | _ ->
            if try_serve_unhidden_extensions Globals.extensions_to_hide then ()
            else if have_welcome_file && Globals.spa then (
