@@ -27,14 +27,15 @@ let rec eval_canonical ctree =
                  invalid_arg' "not a number: @a"
                    Intf.CanonicaltreeFlavor.pp arg))
         args in
+    let sum l = foldl Q.((+)) Q.zero l in
     (match op with
      | "add" ->
-       let result = foldl Q.((+)) Q.zero qargs in
+       let result = sum qargs in
        CAtom (NumericAtom (Q.to_string result, ""))
      | "sub" ->
        let result =
          match qargs with
-         | x :: rest -> Q.(x - foldl (+) zero rest)
+         | x :: rest -> Q.(x - sum rest)
          | _ as arg ->
            invalid_arg' "arity mismatch: @a" Intf.CanonicaltreeFlavor.pp arg in
        CAtom (NumericAtom (Q.to_string result, ""))
