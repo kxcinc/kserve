@@ -541,7 +541,7 @@ let request_handler addr reqd =
         | _, `GET, `Directory ->
            respond_reqd_with_string ~status:`Service_unavailable reqd
              (sprintf "%s is a directory" target)
-        | _, `POST, _ ->
+        | "/__kserve-dev/parse-gensl", `POST, _ ->
           let open Genslib in
           let open Intf in
           let read = ref [] in
@@ -557,22 +557,13 @@ let request_handler addr reqd =
              let canonical_gensl_string =
                CanonicaltreeFlavor.to_string canonical_gensl
              in
-             let responce =
-               let content_type =
-                 match Headers.get req.headers "Content-Type" with
-                 | None -> "application/octet-stream"
-                 | Some x -> x
-               in
-               Response.create
-                 ~headers:(Headers.of_list
-                             ["Content-Type", content_type;
-                              "Content-Length", canonical_gensl_string
-                                                |> String.length
-                                                |> string_of_int;
-                              "Connection", "close"])
-                 `OK
-             in
-             Reqd.respond_with_string reqd responce canonical_gensl_string
+             let headers =
+               ["Content-Type", "text/x.genslx";
+                "Content-Length", canonical_gensl_string
+                                  |> String.length
+                                  |> string_of_int;
+                "Connection", "close"] in
+             respond_reqd_with_string ~headers reqd canonical_gensl_string
            in
            Body.schedule_read reqbody ~on_eof ~on_read
         | _ ->
