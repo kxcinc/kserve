@@ -35,6 +35,7 @@ let rec eval_canonical ctree =
      | "sub" ->
        let result =
          match qargs with
+         | x :: [] -> Q.(- x)
          | x :: rest -> Q.(x - sum rest)
          | _ as arg ->
            invalid_arg' "arity mismatch: @a" Intf.CanonicaltreeFlavor.pp arg in
