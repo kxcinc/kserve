@@ -15,6 +15,8 @@ let rec eval_canonical ctree =
   let open Gensl.Basetypes in
   let open Gensl.Canonicaltree in
   match ctree with
+  | CAtom (NumericAtom (x, "")) ->
+    CAtom (NumericAtom (Q.to_string (Q.of_string x), ""))
   | CAtom _ -> ctree
   | CForm {ckwd = _; cpos = (CAtom (SymbolAtom op)) :: args} ->
     let qargs =

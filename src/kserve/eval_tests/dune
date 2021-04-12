@@ -1,0 +1,7 @@
+(library
+ (name eval_tests)
+ (inline_tests)
+ (libraries gensl_eval)
+ (preprocess (pps kxclib.ppx ppx_inline_test))
+ (flags (:standard
+          -open Kxclib)))

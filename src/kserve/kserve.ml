@@ -544,6 +544,7 @@ let request_handler addr reqd =
         | "/__kserve-dev/parse-gensl", `POST, _ ->
           let open Genslib in
           let open Intf in
+          let open Gensl_eval in
           let read = ref [] in
            let reqbody = Reqd.request_body reqd in
            let rec on_read buffer ~off ~len =
@@ -569,6 +570,7 @@ let request_handler addr reqd =
         | "/__kserve-dev/evaluate-gensl", `POST, _ ->
           let open Genslib in
           let open Intf in
+          let open Gensl_eval in
           let read = ref [] in
            let reqbody = Reqd.request_body reqd in
            let rec on_read buffer ~off ~len =

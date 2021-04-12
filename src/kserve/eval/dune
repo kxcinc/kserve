@@ -1,0 +1,6 @@
+(library
+ (name gensl_eval)
+ (libraries
+   kxclib genslib zarith)
+ (preprocess (pps kxclib.ppx))
+ (flags (:standard -open Kxclib)))
