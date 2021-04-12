@@ -566,6 +566,31 @@ let request_handler addr reqd =
              respond_reqd_with_string ~headers reqd canonical_gensl_string
            in
            Body.schedule_read reqbody ~on_eof ~on_read
+        | "/__kserve-dev/evaluate-gensl", `POST, _ ->
+          let open Genslib in
+          let open Intf in
+          let read = ref [] in
+           let reqbody = Reqd.request_body reqd in
+           let rec on_read buffer ~off ~len =
+             refappend (Bigstringaf.substring buffer ~off ~len) read;
+             Body.schedule_read reqbody ~on_eof ~on_read
+           and on_eof () =
+             let raw_gensl_string = (String.concat "" (List.rev !read)) in
+             let canonical_gensl =
+               Eval.parse_gensl_to_canonical raw_gensl_string
+               |> Eval.eval_canonical in
+             let canonical_gensl_string =
+               CanonicaltreeFlavor.to_string canonical_gensl
+             in
+             let headers =
+               ["Content-Type", "text/x.genslx";
+                "Content-Length", canonical_gensl_string
+                                  |> String.length
+                                  |> string_of_int;
+                "Connection", "close"] in
+             respond_reqd_with_string ~headers reqd canonical_gensl_string
+           in
+           Body.schedule_read reqbody ~on_eof ~on_read
         | _ ->
            if try_serve_unhidden_extensions Globals.extensions_to_hide then ()
            else if have_welcome_file && Globals.spa then (
