@@ -1,6 +1,6 @@
 open Gensl_eval.Eval
 
-let eval s = eval_canonical (parse_gensl_to_canonical s)
+let eval s = eval_ctree (ctree_of_string s)
 
 (* add tests *)
 let%test _ = eval "(add)" = eval "0"

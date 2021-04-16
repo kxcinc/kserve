@@ -553,7 +553,7 @@ let request_handler addr reqd =
            and on_eof () =
              let raw_gensl_string = (String.concat "" (List.rev !read)) in
              let canonical_gensl =
-               Eval.parse_gensl_to_canonical raw_gensl_string
+               Eval.ctree_of_string raw_gensl_string
              in
              let canonical_gensl_string =
                CanonicaltreeFlavor.to_string canonical_gensl
@@ -579,8 +579,8 @@ let request_handler addr reqd =
            and on_eof () =
              let raw_gensl_string = (String.concat "" (List.rev !read)) in
              let canonical_gensl =
-               Eval.parse_gensl_to_canonical raw_gensl_string
-               |> Eval.eval_canonical in
+               Eval.ctree_of_string raw_gensl_string
+               |> Eval.eval_ctree in
              let canonical_gensl_string =
                CanonicaltreeFlavor.to_string canonical_gensl
              in
