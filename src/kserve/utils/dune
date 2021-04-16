@@ -1,0 +1,8 @@
+(executables
+ (names eval_repl)
+ (promote (until-clean))
+ (libraries
+   kxclib genslib zarith
+   gensl_eval)
+ (preprocess (pps kxclib.ppx))
+ (flags (:standard -open Kxclib)))
