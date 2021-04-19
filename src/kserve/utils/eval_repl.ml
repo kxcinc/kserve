@@ -7,7 +7,7 @@ let () =
     printf "repl> "; print_flush ();
     let line = read_line () in
     match line with
-    | "(exit)" -> ()
+    | "#quit" -> ()
     | _ ->
       (try Printexc.print
              (fun l -> ctree_of_string l
