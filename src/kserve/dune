@@ -7,7 +7,6 @@
    tls.lwt lwt.unix cohttp-lwt-unix
    ptime digestif str
    kxclib)
- (preprocess (pps kxclib.ppx))
  (flags (:standard -open Kxclib)))
 
 (env
